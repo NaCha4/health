@@ -12,7 +12,7 @@ OAuth 콜백을 아직 등록하지 않았어도 웹 기록 기능은 사용할 
 | ----------------------- | ---------------------------------------------------------------------- |
 | 프로젝트                | 사용자가 지정한 `health-6b756`                                         |
 | Firestore DB ID·위치    | 기존 DB의 설정 확인. 새 DB를 생성·이전하지 않음                        |
-| 함수 리전               | DB 위치를 고려해 `FUNCTION_REGION` 결정. 기본값 `asia-northeast3`      |
+| 함수 리전               | DB 위치를 고려해 `HEALTH_FUNCTION_REGION` 결정. 기본값 `asia-northeast3`      |
 | 소유자 UID              | Firebase Authentication 본인 계정 UID                                  |
 | 로그인 제공자           | Google 또는 이메일/비밀번호 중 실제 활성화한 방식                      |
 | GitHub 저장소·Pages URL | 사용자 소유 저장소와 정확한 경로                                       |
