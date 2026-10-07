@@ -1,0 +1,9 @@
+node_modules
+dist
+functions/lib
+.cache
+.env*
+functions/.env*
+artifacts
+package-lock.json
+functions/package-lock.json

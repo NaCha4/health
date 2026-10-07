@@ -1,0 +1,17 @@
+# Local environment settings are not committed.
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+functions/lib/
+.cache/
+.firebase/
+*-debug.log
+coverage/
+artifacts/
+*.local
+service-account*.json
+*serviceAccount*.json
+*.pem
+*.key
