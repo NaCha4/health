@@ -8,6 +8,7 @@ import {
   type Change,
 } from '../shared/schema';
 import { demoSnapshot } from '../shared/demo';
+import { ApiError, type SaveResult } from './entry-save';
 export const apiBase = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '');
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -30,23 +31,41 @@ export function realApi(user: User): Api {
       throw new Error(
         '서버 주소가 아직 설정되지 않았습니다. VITE_API_BASE_URL을 설정한 뒤 다시 빌드하세요.',
       );
-    const response = await fetch(apiBase + '/v1' + path, {
-      method,
-      headers: {
-        Authorization: 'Bearer ' + (await user.getIdToken()),
-        'Content-Type': 'application/json',
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(45000),
-    });
+    let response: Response;
+    try {
+      response = await fetch(apiBase + '/v1' + path, {
+        method,
+        headers: {
+          Authorization: 'Bearer ' + (await user.getIdToken()),
+          'Content-Type': 'application/json',
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: AbortSignal.timeout(45000),
+      });
+    } catch {
+      throw new ApiError(
+        method === 'GET'
+          ? '연결을 확인한 후 다시 조회해 주세요.'
+          : '저장 결과를 확인하지 못했어요. 연결을 확인한 후 다시 저장해 주세요. 이전 저장 여부부터 확인합니다.',
+        0,
+        'connection_failed',
+      );
+    }
     let data;
     try {
       data = await response.json();
     } catch {
-      throw new Error('서버 응답을 읽지 못했습니다. 연결 주소를 확인하세요.');
+      throw new ApiError(
+        '서버 응답을 읽지 못했습니다. 연결을 확인하고 다시 시도해 주세요.',
+        response.ok ? 0 : response.status,
+      );
     }
     if (!response.ok)
-      throw new Error(data.message ?? '저장하지 못했습니다. 같은 요청으로 다시 시도하세요.');
+      throw new ApiError(
+        data.message ?? '저장하지 못했습니다. 다시 시도하세요.',
+        response.status,
+        data.code,
+      );
     return data as T;
   };
   return {
@@ -155,8 +174,13 @@ export function demoApi(): Api {
     },
   };
 }
-export function save(api: Api, input: EntryInput, entry?: Entry, requestId = crypto.randomUUID()) {
-  return api.send(
+export function save(
+  api: Api,
+  input: EntryInput,
+  entry?: Entry,
+  requestId: string = crypto.randomUUID(),
+) {
+  return api.send<SaveResult>(
     entry ? '/entries/' + entry.id : '/entries',
     { entry: input, requestId, expectedVersion: entry?.version },
     entry ? 'PUT' : 'POST',

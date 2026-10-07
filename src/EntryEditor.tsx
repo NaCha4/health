@@ -12,6 +12,7 @@ import {
 import { today } from '../shared/dates';
 import { mealEnergy } from '../shared/energy';
 import { inputOf, save, type Api } from './api';
+import { EntrySaver } from './entry-save';
 
 export function Field({
   label,
@@ -250,11 +251,15 @@ export default function EntryEditor({
     [searching, setSearching] = useState(false),
     [foodError, setFoodError] = useState(''),
     [foods, setFoods] = useState<Array<{ id: string; name: string; item: FoodItem }>>([]);
-  const request = useRef(crypto.randomUUID());
+  const saver = useRef<EntrySaver | null>(null);
+  if (!saver.current)
+    saver.current = new EntrySaver(
+      (input, target, requestId) => save(api, input, target, requestId),
+      entry,
+    );
   const patch = (p: Record<string, any>) => {
     setDraft((d) => ({ ...d, ...p }));
-    request.current = crypto.randomUUID();
-    setError('');
+    if (!saver.current?.hasPending) setError('');
   };
   const text = (key: string, placeholder = '', required = false) => (
     <input
@@ -345,7 +350,7 @@ export default function EntryEditor({
     setError('');
     try {
       const input = inputSchema.parse(draft);
-      await save(api, input, entry, request.current);
+      await saver.current!.save(input);
       await onSaved();
       onClose();
     } catch (e) {
@@ -369,7 +374,11 @@ export default function EntryEditor({
       wide={kind === 'meal'}
     >
       <form onSubmit={submit}>
-        <div className="modal-body">
+        <fieldset
+          className="modal-body"
+          disabled={busy}
+          style={{ border: 0, margin: 0, minWidth: 0 }}
+        >
           <Field label={['body', 'baseline'].includes(kind) ? '적용 시작일' : '기록 날짜'}>
             <input
               type="date"
@@ -817,7 +826,7 @@ export default function EntryEditor({
               {error}
             </p>
           )}
-        </div>
+        </fieldset>
         <div className="modal-footer">
           <button type="button" className="button secondary" disabled={busy} onClick={onClose}>
             취소

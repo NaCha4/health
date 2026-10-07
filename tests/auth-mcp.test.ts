@@ -119,6 +119,61 @@ describe('OAuth 보안 경계', () => {
   });
 });
 describe('HTTP 인증·MCP 공통 저장', () => {
+  it('MCP도 실천 참조와 사용자의 채택 상태를 서버에서 보호한다', async () => {
+    const { app, oauth } = fixture(),
+      a = await authorize(oauth),
+      token = await oauth.token(a.body);
+    const call = async (name: string, args: unknown) => {
+      const response = await request(app)
+        .post('/mcp')
+        .auth(token.access_token, { type: 'bearer' })
+        .set('Accept', 'application/json, text/event-stream')
+        .send({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } });
+      expect(response.status).toBe(200);
+      return {
+        error: response.body.result.isError,
+        data: JSON.parse(response.body.result.content[0].text),
+      };
+    };
+    const input = {
+      kind: 'action',
+      date: '2026-10-07',
+      title: 'Synthetic decision',
+      status: 'proposed',
+      note: '',
+      feedback: '',
+    };
+    const invalid = await call('propose_action', {
+      requestId: 'mcp-invalid-action-ref',
+      entry: { ...input, analysisId: 'missing-analysis' },
+    });
+    expect(invalid.error).toBe(true);
+    expect(invalid.data.code).toBe('invalid_evidence');
+    const created = await call('propose_action', { requestId: 'mcp-valid-proposal', entry: input });
+    expect(created.error).not.toBe(true);
+    await request(app)
+      .put('/v1/entries/' + created.data.entry.id)
+      .auth('fixture-owner-session', { type: 'bearer' })
+      .send({
+        requestId: 'web-accept-proposal',
+        expectedVersion: 1,
+        entry: { ...input, status: 'accepted' },
+      })
+      .expect(200);
+    const reset = await call('update_health_entry', {
+      requestId: 'mcp-reset-proposal',
+      id: created.data.entry.id,
+      expectedVersion: 2,
+      entry: input,
+    });
+    expect(reset.error).toBe(true);
+    expect(reset.data.code).toBe('user_decision');
+    const snapshot = await request(app)
+      .get('/v1/snapshot')
+      .auth('fixture-owner-session', { type: 'bearer' });
+    expect(snapshot.body.entries).toHaveLength(1);
+    expect(snapshot.body.entries[0]).toMatchObject({ status: 'accepted', version: 2 });
+  });
   it('미인증·다른 UID·위조 토큰의 읽기 쓰기 내보내기를 차단한다', async () => {
     const { app } = fixture();
     for (const path of ['/v1/snapshot', '/v1/export', '/v1/history', '/v1/connections']) {

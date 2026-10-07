@@ -7,7 +7,7 @@ import {
   type Snapshot,
   type Change,
 } from '../../shared/schema.js';
-import { today } from '../../shared/dates.js';
+import { isFutureOccurrence, today } from '../../shared/dates.js';
 import type { Store, Tx } from './store.js';
 export class AppError extends Error {
   constructor(
@@ -145,7 +145,9 @@ export class HealthService {
         actor === 'dot' &&
         (parsed?.kind === 'goal' ||
           parsed?.kind === 'context' ||
-          (parsed?.kind === 'action' && parsed.status !== 'proposed'))
+          (parsed?.kind === 'action' &&
+            (parsed.status !== 'proposed' ||
+              (before?.kind === 'action' && before.status !== 'proposed'))))
       )
         throw new AppError(
           403,
@@ -170,6 +172,16 @@ export class HealthService {
           if (!(await tx.get<Entry>(root + '/entries/' + evidenceId)))
             throw new AppError(400, 'invalid_evidence', '근거 기록을 찾을 수 없습니다.');
         }
+      }
+      if (next.kind === 'action' && next.analysisId !== undefined) {
+        idSchema.parse(next.analysisId);
+        const analysis = await tx.get<Entry>(root + '/entries/' + next.analysisId);
+        if (analysis?.kind !== 'analysis')
+          throw new AppError(
+            400,
+            'invalid_evidence',
+            '연결할 분석 기록을 찾을 수 없습니다. 분석을 확인하거나 연결 없이 저장하세요.',
+          );
       }
       const siblings =
         next.kind === 'weight' && next.representative && !next.deletedAt
@@ -237,8 +249,12 @@ export class HealthService {
       throw new AppError(400, 'range', '분석 시작일과 종료일을 확인하세요.');
     if (input.kind === 'workout' && input.met != null && !input.metSource)
       throw new AppError(400, 'met_source', '운동 강도 출처나 추정 근거가 필요합니다.');
-    if (input.kind === 'workout' && input.status === 'done' && input.date > today(this.now()))
-      throw new AppError(400, 'future_workout', '미래 운동은 계획으로 저장하세요.');
+    if (
+      input.kind === 'workout' &&
+      input.status === 'done' &&
+      isFutureOccurrence(input, this.now())
+    )
+      throw new AppError(400, 'future_workout', '미래 날짜나 시각의 운동은 계획으로 저장하세요.');
   }
   async history(uid: string, id?: string) {
     if (id) idSchema.parse(id);
@@ -324,6 +340,7 @@ export class HealthService {
     });
     if (new Set(history.map((c) => c.id)).size !== history.length)
       throw new AppError(400, 'duplicate_id', '백업에 중복 이력 ID가 있습니다.');
+    const entriesById = new Map(entries.map((e) => [e.id, e]));
     for (const e of entries) {
       this.validateInput(e, 'web');
       if (
@@ -331,7 +348,11 @@ export class HealthService {
         (e.basedOnVersion > data.version || e.evidenceIds.some((id) => !ids.has(id)))
       )
         throw new AppError(400, 'invalid_evidence', '분석 근거가 누락된 백업입니다.');
-      if (e.kind === 'action' && e.analysisId && !ids.has(e.analysisId))
+      if (
+        e.kind === 'action' &&
+        e.analysisId !== undefined &&
+        entriesById.get(e.analysisId)?.kind !== 'analysis'
+      )
         throw new AppError(400, 'invalid_evidence', '실천 항목의 분석이 누락되었습니다.');
     }
     const root = this.root(uid),
