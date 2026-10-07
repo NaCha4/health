@@ -31,7 +31,7 @@ const database = defineString('FIRESTORE_DATABASE_ID', { default: '(default)' })
 let app: ReturnType<typeof createApp> | undefined;
 export const api = onRequest(
   {
-    region: process.env.FUNCTION_REGION || 'asia-northeast3',
+    region: process.env.HEALTH_FUNCTION_REGION || 'asia-northeast3',
     memory: '256MiB',
     timeoutSeconds: 60,
     maxInstances: 3,

@@ -8,7 +8,8 @@
   ],
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc -p tsconfig.json && vite build && npm run build --workspace functions",
+    "build": "tsc -p tsconfig.json && vite build && npm run build --workspace functions && npm run check:functions-package",
+    "check:functions-package": "node scripts/check-functions-package.mjs",
     "typecheck": "tsc -p tsconfig.json && tsc -p functions/tsconfig.json --noEmit",
     "test": "vitest run",
     "preview": "vite preview --host 127.0.0.1",
