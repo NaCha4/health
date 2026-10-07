@@ -33,6 +33,50 @@ afterAll(async () => {
   await deleteApp(admin);
 });
 describe('실제 로컬 Firestore 규칙과 트랜잭션', () => {
+  it('실제 트랜잭션에서도 제안 참조와 사용자 결정을 보호하고 백업을 복원한다', async () => {
+    const h = new HealthService(new FirestoreStore(getFirestore(admin))),
+      uid = 'regression-emulator';
+    const input = { kind: 'action', date: '2026-10-07', title: 'Synthetic integration action' };
+    await expect(
+      h.mutate(uid, 'dot', 'create', 'emulator-invalid-ref', { ...input, analysisId: 'missing' }),
+    ).rejects.toMatchObject({ code: 'invalid_evidence' });
+    const analysis = await h.mutate(uid, 'dot', 'create', 'emulator-valid-analysis', {
+      kind: 'analysis',
+      date: '2026-10-07',
+      title: 'Synthetic analysis',
+      from: '2026-10-07',
+      to: '2026-10-07',
+      observations: 'Fixture only',
+      limitations: 'Fixture only',
+      suggestions: 'Fixture only',
+      basedOnVersion: 0,
+      evidenceIds: [],
+    });
+    const linked = { ...input, analysisId: analysis.entry.id };
+    const action = await h.mutate(uid, 'dot', 'create', 'emulator-valid-action', linked);
+    await h.mutate(
+      uid,
+      'web',
+      'update',
+      'emulator-user-accept',
+      { ...linked, status: 'accepted' },
+      action.entry.id,
+      1,
+    );
+    await expect(
+      h.mutate(
+        uid,
+        'dot',
+        'update',
+        'emulator-dot-reset',
+        { ...linked, status: 'proposed' },
+        action.entry.id,
+        2,
+      ),
+    ).rejects.toMatchObject({ code: 'user_decision' });
+    await h.restoreBackup('regression-restored', await h.export(uid));
+    expect(await h.snapshot('regression-restored')).toEqual(await h.snapshot(uid));
+  });
   it('클라이언트 직접 조회·생성·목록 접근을 로그인 여부와 무관하게 차단한다', async () => {
     for (const ctx of [
       env.unauthenticatedContext(),

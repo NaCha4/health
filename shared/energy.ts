@@ -1,6 +1,6 @@
 import type { Entry, FoodItem, Snapshot } from './schema.js';
-import { ageAt, datesInRange, daysBetween, today } from './dates.js';
-export const CALCULATION_VERSION = '2026-10-08.1';
+import { ageAt, datesInRange, daysBetween, isFutureOccurrence, today } from './dates.js';
+export const CALCULATION_VERSION = '2026-10-08.2';
 export interface Amount {
   value: number | null;
   low: number | null;
@@ -128,7 +128,7 @@ export function calculateDay(snapshot: Snapshot, date: string, now = new Date())
   const mealsComplete = !!check?.mealsComplete && unknownFoods === 0;
   const workouts = day.filter(
     (e): e is Extract<Entry, { kind: 'workout' }> =>
-      e.kind === 'workout' && e.status === 'done' && !e.duplicateOf,
+      e.kind === 'workout' && e.status === 'done' && !e.duplicateOf && !isFutureOccurrence(e, now),
   );
   const workoutValues = workouts.map((w) => {
     const can = !!weight && w.met != null && w.minutes != null && !!w.metSource;

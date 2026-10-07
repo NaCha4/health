@@ -8,6 +8,15 @@ export function today(now = new Date()): string {
   }).formatToParts(now);
   return ['year', 'month', 'day'].map((k) => p.find((x) => x.type === k)!.value).join('-');
 }
+export function isFutureOccurrence(
+  entry: { date: string; occurredAt?: string },
+  now = new Date(),
+): boolean {
+  return (
+    entry.date > today(now) ||
+    (entry.occurredAt != null && Date.parse(entry.occurredAt) > now.getTime())
+  );
+}
 export function addDays(date: string, days: number): string {
   const d = new Date(date + 'T00:00:00Z');
   d.setUTCDate(d.getUTCDate() + days);
