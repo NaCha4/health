@@ -2,6 +2,10 @@
 
 신체정보, 체중, 식사, 운동과 분석을 함께 보관하는 개인 건강 기록 서비스입니다. GitHub Pages에 React 화면을 올리고 Firebase Authentication·Firestore·Cloud Functions를 사용합니다. ChatGPT의 dot는 OAuth로 보호된 MCP 도구 11개를 통해 같은 기록을 읽고 씁니다.
 
+웹사이트: **https://nacha4.github.io/health/** · MCP: **https://api-gb3glc7gyq-du.a.run.app/mcp**
+
+처음 이용할 때는 소유자 이메일을 입력하고 **처음 이용하거나 비밀번호를 잊으셨나요?**를 눌러 비밀번호를 설정합니다. 등록된 소유자만 실제 기록에 접근할 수 있습니다. 공개 가상 체험은 개인 기록을 사용하지 않습니다.
+
 ## 로컬 실행
 
 Node.js 22와 npm을 사용합니다.
@@ -56,11 +60,11 @@ npm run build
 
 웹은 인증된 원본 스냅샷을 가져와 공유 계산 함수를 실행하고, MCP는 서버에서 같은 함수를 실행합니다. 변경 없는 웹 갱신은 메타데이터 버전만 읽어 전체 재조회를 줄입니다.
 
-## 배포 준비
+## 배포 상태
 
-소스 구현과 로컬 검증을 완료했으며 **외부 배포는 실행하지 않았습니다.** 실제 dot의 계정 연결은 공개 HTTPS 서버가 생긴 뒤 별도로 확인해야 합니다. 테스트 MCP 클라이언트의 왕복 검증을 실제 ChatGPT 연결 검증으로 간주하지 않습니다.
+2026-10-08 사용자 승인 후 **GitHub Pages와 Firebase API 배포를 완료**했습니다. 실제 주소에서 로그인 화면, 가상 체험, 상태 확인, OAuth discovery, 미인증·잘못된 토큰·외부 도메인·직접 Firestore 접근 차단을 검증했습니다. 첫 소유자 로그인과 실제 ChatGPT 연결 동의는 사용자 조작이 필요하며 아직 완료하지 않았습니다. 테스트 MCP 클라이언트의 왕복 검증을 실제 ChatGPT 연결 검증으로 간주하지 않습니다.
 
-GitHub 저장소·Pages 주소, 로그인 제공자, 소유자 UID, Firestore 위치/DB ID, ChatGPT 콜백 URL 확인이 남아 있습니다. 선택적 식품 API 자격증명도 생성하지 않았습니다.
+서울 리전의 기존 `default` DB, 이메일 로그인, 소유자 UID와 Pages 승인 도메인을 설정했습니다. OAuth는 공개 client ID `harugyeol-dot`와 S256 PKCE를 사용합니다. ChatGPT 연결에는 위 MCP 주소와 OAuth를 선택합니다. 선택적 식품 API 키는 아직 설정하지 않았습니다.
 
 [`배포 절차`](docs/deployment.md)에 설정·권한 변경 범위와 수동 확인 절차가 있습니다. Pages 워크플로는 수동 실행만 지원하며 Firebase 자동 배포는 없습니다. 사용자 승인 없이 push·배포·운영 데이터 수정·자격증명 발급을 수행하지 않습니다.
 

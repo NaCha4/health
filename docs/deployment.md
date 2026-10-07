@@ -4,7 +4,11 @@
 
 현재 대상은 `NaCha4/health` 저장소와 `health-6b756` 프로젝트입니다. 기존 Firestore의 실제 ID는 **`default`** (괄호 없음), 위치는 `asia-northeast3`입니다. `firebase.json`도 이 DB만 지정합니다. 이메일 로그인과 소유자 UID를 사용하며 실제 값은 Git에서 제외합니다. 최초 비밀번호는 사용자가 사이트의 설정 메일 요청 버튼으로 직접 정합니다.
 
-OAuth 콜백을 아직 등록하지 않았어도 웹 기록 기능은 사용할 수 있습니다. 빈 콜백 허용 목록은 모든 OAuth 연결 요청을 거부합니다. 정확한 ChatGPT 콜백을 확인한 다음 서버 환경값을 갱신해야 합니다.
+웹사이트는 https://nacha4.github.io/health/, API 원점은 https://api-gb3glc7gyq-du.a.run.app 입니다. 2026-10-08 게시와 공개 접근 경계 검증을 완료했습니다. 컨테이너 빌드 이미지는 7일 후 정리하도록 설정했으며 건강 기록에는 적용하지 않습니다.
+
+OAuth 콜백은 issuer 확인을 지원하는 서버용 공식 고정 주소 `https://chatgpt.com/connector_platform_oauth_redirect`를 등록했습니다. [OpenAI 인증 문서](https://developers.openai.com/plugins/build/auth)의 규약에 따라 discovery와 성공·거절 응답에 동일한 issuer를 제공합니다. 실제 연결 화면이 다른 정확한 콜백을 제시한다면 그 주소를 확인해 허용 목록에 추가해야 합니다. 사용자의 ChatGPT 로그인 및 동의는 아직 완료하지 않았습니다.
+
+OAuth 콜백이 없는 다른 배포에서도 웹 기록 기능은 사용할 수 있습니다. 빈 콜백 허용 목록은 모든 OAuth 연결 요청을 거부합니다.
 
 ## 확인할 정보
 
