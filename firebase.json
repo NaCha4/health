@@ -3,8 +3,8 @@
     {
       "source": "functions",
       "codebase": "health",
-      "ignore": ["node_modules", ".git", "*.local", ".env", ".env.*", "src", "tsconfig.json"],
-      "predeploy": ["npm run build --workspace functions"]
+      "ignore": ["node_modules", ".git", "*.local", ".env", ".env.*", "src/**", "tsconfig.json"],
+      "predeploy": ["npm run build --workspace functions", "npm run check:functions-package"]
     }
   ],
   "firestore": [
