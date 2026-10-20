@@ -10,6 +10,13 @@ export const dateSchema = z
 const text = z.string().trim().max(4000);
 const number = z.number().finite().nonnegative().max(1000000);
 const optionalNumber = number.nullable().optional();
+export const medicationDoseSources = {
+  user: '사용자 본인 확인·진술',
+  prescription: '처방전',
+  package: '약 봉투·제품 표시',
+  clinician: '의료진 안내',
+  other: '기타 확인 근거',
+} as const;
 export const sourceSchema = z
   .object({
     kind: z.enum(['user', 'label', 'official', 'database', 'estimate', 'device']),
@@ -64,9 +71,22 @@ export const inputSchema = z.discriminatedUnion('kind', [
     .object({
       ...base,
       kind: z.literal('medication'),
+      date: dateSchema.describe(
+        '확인한 일정과 상태의 기록 기준일. 실제 복용 시작일이 아니며 등록 시각은 createdAt입니다.',
+      ),
       name: z.string().trim().min(1).max(200),
       dose: z.string().trim().min(1).max(200),
       doseConfirmed: z.literal(true),
+      startedOn: dateSchema
+        .nullable()
+        .optional()
+        .describe('실제 복용 시작일. 모르면 null 또는 생략하며 date로 대신 채우지 않습니다.'),
+      doseSource: z
+        .enum(['user', 'prescription', 'package', 'clinician', 'other'])
+        .optional()
+        .describe(
+          '용량 확인 근거. user는 사용자 본인 확인·진술이며 처방전 확인을 의미하지 않습니다. 생략은 근거 미기록입니다.',
+        ),
       route: z.enum(['oral', 'injection', 'other']),
       schedule: z.string().trim().min(1).max(1000),
       status: z.enum(['active', 'paused', 'stopped']),

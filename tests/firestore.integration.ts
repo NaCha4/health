@@ -41,6 +41,8 @@ describe('실제 로컬 Firestore 규칙과 트랜잭션', () => {
       kind: 'medication',
       date: '2026-10-07',
       name: 'SYNTHETIC fixture',
+      startedOn: null,
+      doseSource: 'user',
       dose: 'SYNTHETIC 1 unit',
       doseConfirmed: true,
       route: 'injection',

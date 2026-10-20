@@ -70,6 +70,8 @@ describe('OAuth 보안 경계', () => {
       kind: 'medication',
       date: '2026-10-07',
       name: 'SYNTHETIC HTTP fixture',
+      startedOn: null,
+      doseSource: 'user',
       dose: 'SYNTHETIC 1 unit',
       doseConfirmed: true,
       route: 'oral',
@@ -86,6 +88,11 @@ describe('OAuth 보안 경계', () => {
       medicationConfirmedByUser: true,
     });
     expect(confirmed.error).not.toBe(true);
+    expect(confirmed.data.entry).toMatchObject({
+      startedOn: null,
+      doseSource: 'user',
+      date: '2026-10-07',
+    });
     const p = { body: confirmed.data };
     const d = await call('create_health_entry', {
       requestId: 'mcp-actual-dose',

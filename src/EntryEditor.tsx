@@ -3,6 +3,7 @@ import { X, Plus, Trash2, Search, LoaderCircle } from 'lucide-react';
 import {
   inputSchema,
   labels,
+  medicationDoseSources,
   type Entry,
   type EntryInput,
   type Kind,
@@ -152,7 +153,7 @@ function SourceFields({ value, onChange }: { value: Source; onChange: (v: Source
 }
 const source = (): Source => ({ kind: 'user', title: '직접 입력' });
 const titleForPlan = (e: Entry) =>
-  e.kind === 'medication' ? `${e.name} · ${e.dose} · ${e.date}부터` : '';
+  e.kind === 'medication' ? `${e.name} · ${e.dose} · ${e.date} 기준` : '';
 function defaults(kind: Kind, date: string): Record<string, any> {
   const base = { kind, date, note: '' };
   switch (kind) {
@@ -162,6 +163,8 @@ function defaults(kind: Kind, date: string): Record<string, any> {
         name: '',
         dose: '',
         doseConfirmed: false,
+        startedOn: null,
+        doseSource: 'user',
         route: '',
         schedule: '',
         status: 'active',
@@ -408,7 +411,18 @@ export default function EntryEditor({
           style={{ border: 0, margin: 0, minWidth: 0 }}
         >
           <Field
-            label={['body', 'baseline', 'medication'].includes(kind) ? '적용 시작일' : '기록 날짜'}
+            label={
+              kind === 'medication'
+                ? '기록 기준일'
+                : ['body', 'baseline'].includes(kind)
+                  ? '적용 시작일'
+                  : '기록 날짜'
+            }
+            hint={
+              kind === 'medication'
+                ? '이 날 현재 확인한 일정과 상태의 기준일입니다. 실제 복용 시작일과 다르며, 등록 시각은 따로 자동 저장해요.'
+                : undefined
+            }
           >
             <input
               type="date"
@@ -465,17 +479,32 @@ export default function EntryEditor({
             <>
               {draft.previousId && (
                 <p className="help">
-                  이전 처방은 그대로 보존됩니다. 새 적용일부터의 전체 일정과 상태를 확인하세요.
+                  이전 처방은 그대로 보존됩니다. 새 기록 기준일 현재의 전체 일정과 상태를
+                  확인하세요.
                 </p>
               )}
               <Field label="약물·주사 이름">{text('name', '', true)}</Field>
+              <Field
+                label="실제 복용 시작일 (선택)"
+                hint="모르면 비워 두세요. 기록 기준일을 실제 시작일로 대신 저장하지 않아요."
+              >
+                <input
+                  type="date"
+                  value={draft.startedOn ?? ''}
+                  max={draft.date}
+                  onChange={(e) => patch({ startedOn: e.target.value || null })}
+                />
+              </Field>
               <Field
                 label="확인한 처방 용량"
                 hint="단위까지 직접 적어 주세요. 예시 값은 자동으로 채우지 않아요."
               >
                 {text('dose', '', true)}
               </Field>
-              {check('doseConfirmed', '처방전·약 봉투 등에서 이 용량을 직접 확인했어요')}
+              <Field label="용량 확인 근거">
+                {select('doseSource', { '': '근거를 선택해 주세요', ...medicationDoseSources })}
+              </Field>
+              {check('doseConfirmed', '위 용량은 내가 확인해 알려준 내용과 같아요')}
               <Field label="투여 경로">
                 {select('route', {
                   '': '선택해 주세요',
@@ -494,7 +523,7 @@ export default function EntryEditor({
                   onChange={(e) => patch({ schedule: e.target.value })}
                 />
               </Field>
-              <Field label="적용일부터의 상태">
+              <Field label="기록 기준일 현재 상태">
                 {select('status', { active: '복용 중', paused: '일시 중단', stopped: '중단' })}
               </Field>
               <Field label="변경·중단 사유 (선택)">{area('changeReason')}</Field>

@@ -9,7 +9,14 @@ import {
   timelineCsv,
   type Medication,
 } from '../shared/integrated';
-import { titleOf, type Entry, type EntryInput, type Kind, type Snapshot } from '../shared/schema';
+import {
+  titleOf,
+  medicationDoseSources,
+  type Entry,
+  type EntryInput,
+  type Kind,
+  type Snapshot,
+} from '../shared/schema';
 import { inputOf } from './api';
 import { Field } from './EntryEditor';
 
@@ -130,9 +137,12 @@ export function MedicationPanel({
               <p className="medication-dose">{p.dose}</p>
               <p>{p.schedule}</p>
               <p className="help">
-                {p.date}부터 ·{' '}
-                {p.route === 'oral' ? '경구' : p.route === 'injection' ? '주사' : '기타'} · 사용자
-                용량 확인
+                기록 기준일 {p.date} ·{' '}
+                {p.route === 'oral' ? '경구' : p.route === 'injection' ? '주사' : '기타'}
+              </p>
+              <p className="help">
+                실제 복용 시작일 {p.startedOn ?? '미상'} ·{' '}
+                {p.doseSource ? medicationDoseSources[p.doseSource] : '용량 확인 근거 미기록'}
               </p>
               {p.changeReason && <p className="help">변경 사유: {p.changeReason}</p>}
               <div className="button-row">
@@ -182,8 +192,8 @@ export function MedicationPanel({
       <section className="card medication-history">
         <h2>처방 변경·중단 이력</h2>
         <p className="help">
-          이전 일정을 보존한 채 새 적용일과 상태를 추가합니다. 각 기록의 실제 투여는 당시 처방에
-          연결됩니다.
+          이전 일정을 보존한 채 새 기록 기준일과 상태를 추가합니다. 각 기록의 실제 투여는 당시
+          처방에 연결됩니다.
         </p>
         {history.length ? (
           history.map((p) => (

@@ -249,6 +249,12 @@ export class HealthService {
   }
   private validateInput(input: EntryInput | undefined, actor: string) {
     if (!input) return;
+    if (input.kind === 'medication' && input.startedOn && input.startedOn > input.date)
+      throw new AppError(
+        400,
+        'medication_start',
+        '실제 복용 시작일은 기록 기준일보다 이후일 수 없습니다. 모르면 비워 두세요.',
+      );
     if (input.occurredAt && today(new Date(input.occurredAt)) !== input.date)
       throw new AppError(
         400,

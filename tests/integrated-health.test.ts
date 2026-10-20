@@ -138,6 +138,47 @@ describe('통합 건강 모델과 관찰 요약', () => {
   });
 });
 describe('처방 이력·실제 투여의 서버 무결성', () => {
+  it('시작일 미상과 사용자 진술을 그대로 저장하고 기준일·등록 시각·실제 시작일을 분리한다', async () => {
+    const h = fixture();
+    const p = await h.mutate('unknown-start-fixture', 'web', 'create', 'unknown-start-plan', {
+      ...medication,
+      startedOn: null,
+      doseSource: 'user',
+    });
+    expect(p.entry).toMatchObject({
+      date,
+      startedOn: null,
+      doseSource: 'user',
+      createdAt: now.toISOString(),
+    });
+    expect(p.entry.date).not.toBe(p.entry.createdAt.slice(0, 10));
+    const legacy = await h.mutate(
+      'unknown-start-fixture',
+      'web',
+      'create',
+      'legacy-no-new-fields',
+      medication,
+    );
+    expect(legacy.entry).not.toHaveProperty('startedOn');
+    expect(legacy.entry).not.toHaveProperty('doseSource');
+    const known = await h.mutate('unknown-start-fixture', 'web', 'create', 'known-start-plan', {
+      ...medication,
+      startedOn: '2026-10-01',
+      doseSource: 'prescription',
+    });
+    expect(known.entry).toMatchObject({ date, startedOn: '2026-10-01' });
+    await expect(
+      h.mutate('unknown-start-fixture', 'web', 'create', 'invalid-start-plan', {
+        ...medication,
+        startedOn: '2026-10-09',
+      }),
+    ).rejects.toMatchObject({ code: 'medication_start' });
+    const backup = await h.export('unknown-start-fixture');
+    await h.restoreBackup('unknown-start-restored', backup);
+    expect(await h.snapshot('unknown-start-restored')).toEqual(
+      await h.snapshot('unknown-start-fixture'),
+    );
+  });
   it('사용자가 확인한 일정만 dot에 허용하며 재시도·변경 이력과 직접 수정 차단을 유지한다', async () => {
     const h = fixture();
     for (const confirmation of [undefined, false])

@@ -46,6 +46,7 @@ import {
 } from 'lucide-react';
 import {
   labels,
+  medicationDoseSources,
   kinds,
   titleOf,
   type Entry,
@@ -1985,6 +1986,17 @@ export default function App() {
             <h3 className="detail-title">{titleOf(selected)}</h3>
             <p>{description(selected)}</p>
             {selected.note && <p className="detail-note">{selected.note}</p>}
+            {selected.kind === 'medication' && (
+              <p className="help">
+                기록 기준일 {selected.date} · 실제 복용 시작일 {selected.startedOn ?? '미상'} · 등록
+                시각{' '}
+                {new Date(selected.createdAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}{' '}
+                (한국 시간) ·{' '}
+                {selected.doseSource
+                  ? medicationDoseSources[selected.doseSource]
+                  : '용량 확인 근거 미기록'}
+              </p>
+            )}
             {selected.kind === 'meal' &&
               selected.items.map((f, i) => (
                 <div className="detail-food" key={i}>
@@ -2059,6 +2071,8 @@ export default function App() {
                           status: '상태',
                           dose: '확인한 처방 용량',
                           doseConfirmed: '용량 확인',
+                          startedOn: '실제 복용 시작일',
+                          doseSource: '용량 확인 근거',
                           route: '투여 경로',
                           schedule: '처방 일정',
                           medicationId: '당시 처방',
