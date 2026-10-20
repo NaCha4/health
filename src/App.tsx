@@ -260,7 +260,7 @@ function download(data: string, name: string, type: string) {
 }
 function csvCell(v: unknown) {
   const s = String(v ?? '');
-  return '"' + (/^[=+\-@\t\r]/.test(s) ? "'" + s : s).replaceAll('"', '""') + '"';
+  return '"' + (/^\s*[=+\-@\t\r]/.test(s) ? "'" + s : s).replaceAll('"', '""') + '"';
 }
 
 export default function App() {

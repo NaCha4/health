@@ -314,7 +314,7 @@ export function IntegratedSummary({
                 <small>증상 기록</small>
                 <strong>{c.symptomCount}건</strong>
                 <p>
-                  {c.symptomDays}일 기록 · 평균 강도 {n(c.severityAverage)}
+                  강도 1 이상 {c.symptomDays}일 · 평균 강도 {n(c.severityAverage)}
                 </p>
                 <em>미기록일의 증상 유무는 알 수 없어요.</em>
               </div>
@@ -331,7 +331,9 @@ export function IntegratedSummary({
               <p>
                 {c.symptomDays
                   ? `증상을 기록한 ${c.symptomDays}일 중 ${c.overlapDays}일이 실제 투여를 기록한 당일 또는 다음 날과 겹쳤어요.`
-                  : '이 기간에 등록한 증상 기록이 없어요.'}
+                  : c.symptomCount
+                    ? '이 기간의 증상 기록은 모두 강도 0으로, 증상이 없었다고 직접 남긴 기록이에요.'
+                    : '이 기간에 등록한 증상 기록이 없어요.'}
               </p>
               <h3>가설 · 가능한 설명</h3>
               <p>
