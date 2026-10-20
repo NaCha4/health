@@ -96,7 +96,7 @@ export function createApp(store: Store, config: AppConfig, verify: VerifyToken) 
       .catch(next);
   };
   app.get('/health', (_req, res) =>
-    res.json({ ok: true, service: 'harugyeol-health', version: '1.1.0' }),
+    res.json({ ok: true, service: 'harugyeol-health', version: '1.1.1' }),
   );
   const metadata = (_req: Request, res: Response) => res.json(oauth.metadata());
   app.get('/.well-known/oauth-authorization-server', metadata);

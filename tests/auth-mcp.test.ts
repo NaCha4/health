@@ -80,11 +80,13 @@ describe('OAuth 보안 경계', () => {
       (await call('create_health_entry', { requestId: 'automatic-prescription', entry: plan })).data
         .code,
     ).toBe('user_decision');
-    const p = await request(app)
-      .post('/v1/entries')
-      .auth('fixture-owner-session', { type: 'bearer' })
-      .send({ requestId: 'web-prescription', entry: plan })
-      .expect(201);
+    const confirmed = await call('create_health_entry', {
+      requestId: 'confirmed-user-prescription',
+      entry: plan,
+      medicationConfirmedByUser: true,
+    });
+    expect(confirmed.error).not.toBe(true);
+    const p = { body: confirmed.data };
     const d = await call('create_health_entry', {
       requestId: 'mcp-actual-dose',
       entry: {
@@ -290,6 +292,50 @@ describe('HTTP 인증·MCP 공통 저장', () => {
     expect(init.body.result.serverInfo.name).toBe('harugyeol-health');
     const list = await call('tools/list');
     expect(list.body.result.tools).toHaveLength(11);
+    const advertised = list.body.result.tools;
+    const createSchema = advertised.find((x: any) => x.name === 'create_health_entry').inputSchema;
+    const updateSchema = advertised.find((x: any) => x.name === 'update_health_entry').inputSchema;
+    const kinds = (schema: any) =>
+      schema.properties.entry.anyOf.map((x: any) => x.properties.kind.const).sort();
+    const expected = [
+      'medication',
+      'dose',
+      'symptom',
+      'sleep',
+      'weight',
+      'meal',
+      'workout',
+      'body',
+      'baseline',
+      'checkin',
+      'goal',
+      'context',
+      'analysis',
+      'action',
+    ].sort();
+    expect(kinds(createSchema)).toEqual(expected);
+    expect(kinds(updateSchema)).toEqual(expected);
+    expect(createSchema.properties.medicationConfirmedByUser.type).toBe('boolean');
+    expect(createSchema.required).not.toContain('medicationConfirmedByUser');
+    expect(
+      advertised
+        .find((x: any) => x.name === 'list_health_entries')
+        .inputSchema.properties.kind.enum.sort(),
+    ).toEqual(expected);
+    expect(
+      createSchema.properties.entry.anyOf.find((x: any) => x.properties.kind.const === 'medication')
+        .required,
+    ).toEqual(
+      expect.arrayContaining([
+        'name',
+        'dose',
+        'doseConfirmed',
+        'route',
+        'schedule',
+        'status',
+        'date',
+      ]),
+    );
     const created = await call('tools/call', {
       name: 'create_health_entry',
       arguments: {

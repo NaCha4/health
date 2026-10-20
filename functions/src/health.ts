@@ -86,6 +86,7 @@ export class HealthService {
     input?: unknown,
     id?: string,
     expectedVersion?: number,
+    medicationConfirmedByUser = false,
   ) {
     const root = this.root(uid);
     requestSchema.parse(requestId);
@@ -96,11 +97,11 @@ export class HealthService {
     if (operation !== 'create' && (!id || !Number.isInteger(expectedVersion)))
       throw new AppError(400, 'version_required', '수정할 기록 ID와 버전이 필요합니다.');
     this.validateInput(parsed, actor);
-    if (parsed?.kind === 'medication' && actor === 'dot')
+    if (parsed?.kind === 'medication' && actor === 'dot' && !medicationConfirmedByUser)
       throw new AppError(
         403,
         'user_decision',
-        '약물·주사 처방 일정과 변경·중단은 홈페이지에서 직접 확인하세요.',
+        '사용자가 확인한 처방 일정만 medicationConfirmedByUser: true로 기록하세요. 임의 처방 변경은 허용하지 않습니다.',
       );
     const fingerprint = hash(
       stable({
@@ -108,6 +109,7 @@ export class HealthService {
         input: parsed ?? null,
         id: id ?? null,
         expectedVersion: expectedVersion ?? null,
+        ...(medicationConfirmedByUser ? { medicationConfirmedByUser: true } : {}),
       }),
     );
     const reqPath = root + '/requests/' + hash(requestId),

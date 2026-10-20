@@ -47,7 +47,16 @@ describe('실제 로컬 Firestore 규칙과 트랜잭션', () => {
       schedule: 'SYNTHETIC schedule',
       status: 'active',
     };
-    const p = await h.mutate(uid, 'web', 'create', 'emulator-integrated-plan', plan);
+    const p = await h.mutate(
+      uid,
+      'dot',
+      'create',
+      'emulator-integrated-plan',
+      plan,
+      undefined,
+      undefined,
+      true,
+    );
     const changes = await Promise.allSettled([
       h.mutate(uid, 'web', 'create', 'emulator-change-a', {
         ...plan,

@@ -138,6 +138,88 @@ describe('통합 건강 모델과 관찰 요약', () => {
   });
 });
 describe('처방 이력·실제 투여의 서버 무결성', () => {
+  it('사용자가 확인한 일정만 dot에 허용하며 재시도·변경 이력과 직접 수정 차단을 유지한다', async () => {
+    const h = fixture();
+    for (const confirmation of [undefined, false])
+      await expect(
+        h.mutate(
+          'confirmed-fixture',
+          'dot',
+          'create',
+          'unconfirmed-medication',
+          medication,
+          undefined,
+          undefined,
+          confirmation,
+        ),
+      ).rejects.toMatchObject({ code: 'user_decision' });
+    expect(await h.snapshot('confirmed-fixture')).toEqual({ entries: [], version: 0 });
+    const p = await h.mutate(
+      'confirmed-fixture',
+      'dot',
+      'create',
+      'confirmed-medication',
+      medication,
+      undefined,
+      undefined,
+      true,
+    );
+    expect(
+      await h.mutate(
+        'confirmed-fixture',
+        'dot',
+        'create',
+        'confirmed-medication',
+        medication,
+        undefined,
+        undefined,
+        true,
+      ),
+    ).toEqual(p);
+    await expect(
+      h.mutate('confirmed-fixture', 'dot', 'create', 'unconfirmed-revision', {
+        ...medication,
+        previousId: p.entry.id,
+        status: 'stopped',
+      }),
+    ).rejects.toMatchObject({ code: 'user_decision' });
+    const revision = await h.mutate(
+      'confirmed-fixture',
+      'dot',
+      'create',
+      'confirmed-revision',
+      { ...medication, previousId: p.entry.id, status: 'stopped' },
+      undefined,
+      undefined,
+      true,
+    );
+    await expect(
+      h.mutate(
+        'confirmed-fixture',
+        'dot',
+        'update',
+        'overwrite-confirmed',
+        medication,
+        p.entry.id,
+        1,
+        true,
+      ),
+    ).rejects.toMatchObject({ code: 'medication_history' });
+    expect((await h.snapshot('confirmed-fixture')).entries).toEqual([p.entry, revision.entry]);
+    expect(await h.history('confirmed-fixture')).toHaveLength(2);
+    await expect(
+      h.mutate(
+        'confirmed-fixture',
+        'dot',
+        'create',
+        'missing-confirmed-dose',
+        { ...medication, doseConfirmed: false },
+        undefined,
+        undefined,
+        true,
+      ),
+    ).rejects.toBeTruthy();
+  });
   it('확정 용량·시각·계정 참조를 검증하고 부적합 입력을 쓰지 않는다', async () => {
     const h = fixture(),
       p = await h.mutate('fixture', 'web', 'create', 'synthetic-plan', medication);
