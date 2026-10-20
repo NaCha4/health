@@ -30,6 +30,9 @@ import {
   LoaderCircle,
   LogOut,
   Plus,
+  Pill,
+  Moon,
+  Activity,
   RefreshCw,
   Scale,
   Search,
@@ -63,6 +66,7 @@ import {
 import { auth, apiBase, realApi, demoApi, inputOf, save, type Api } from './api';
 import EntryEditor, { Modal, Field } from './EntryEditor';
 import TrendExtras from './TrendExtras';
+import { HealthOverview, MedicationPanel, IntegratedSummary, Timeline } from './IntegratedHealth';
 
 const empty: Snapshot = { entries: [], version: 0 };
 const number = (v: number | null | undefined, digits = 0) =>
@@ -78,13 +82,18 @@ const longDate = (v: string) =>
     timeZone: 'Asia/Seoul',
   }).format(new Date(v + 'T12:00:00+09:00'));
 const nav = [
-  { id: 'today', label: '오늘', icon: Home },
+  { id: 'today', label: '건강 홈', icon: Home },
+  { id: 'medications', label: '약물·주사', icon: Pill },
   { id: 'records', label: '기록 모아보기', icon: CalendarDays },
   { id: 'trends', label: '변화 살펴보기', icon: ChartNoAxesCombined },
   { id: 'analysis', label: 'dot의 노트', icon: Sparkles },
   { id: 'settings', label: '설정', icon: Settings2 },
 ];
 const icons: Record<Kind, typeof Scale> = {
+  medication: Pill,
+  dose: Pill,
+  symptom: Activity,
+  sleep: Moon,
   weight: Scale,
   meal: Utensils,
   workout: Dumbbell,
@@ -97,6 +106,14 @@ const icons: Record<Kind, typeof Scale> = {
   action: Check,
 };
 function description(e: Entry) {
+  if (e.kind === 'medication')
+    return `${e.dose} · ${e.schedule} · ${{ active: '복용 중', paused: '일시 중단', stopped: '중단' }[e.status]}`;
+  if (e.kind === 'dose')
+    return e.status === 'taken' ? '실제 복용·투여 기록' : '미복용·미투여로 직접 기록';
+  if (e.kind === 'symptom')
+    return `강도 ${e.severity}/10${e.durationMinutes != null ? ` · ${e.durationMinutes}분` : ''}`;
+  if (e.kind === 'sleep')
+    return e.quality == null ? '수면 시간 기록' : `수면 만족도 ${e.quality}/5`;
   if (e.kind === 'meal') {
     const n = mealEnergy(e.items);
     return `${n.value == null ? '열량 미상' : number(n.value) + ' kcal'}${n.estimated ? ' · 추정 포함' : ''}${n.unknown ? ' · 정보 확인 필요' : ''}`;
@@ -120,7 +137,9 @@ function stale(report: Extract<Entry, { kind: 'analysis' }>, s: Snapshot) {
         ? e.dataVersion > report.basedOnVersion
         : e.updatedAt > report.createdAt) &&
       e.date <= report.to &&
-      (e.date >= report.from || ['body', 'baseline', 'weight'].includes(e.kind)),
+      (e.date >= report.from ||
+        ['body', 'baseline', 'weight', 'medication'].includes(e.kind) ||
+        (e.kind === 'dose' && e.date >= addDays(report.from, -1))),
   );
 }
 function WeightChart({
@@ -257,7 +276,9 @@ export default function App() {
     [error, setError] = useState(''),
     [toast, setToast] = useState('');
   const [date, setDate] = useState(today()),
-    [editor, setEditor] = useState<{ kind: Kind; entry?: Entry } | null>(null),
+    [editor, setEditor] = useState<{ kind: Kind; entry?: Entry; initial?: EntryInput } | null>(
+      null,
+    ),
     [detail, setDetail] = useState<string | null>(null),
     [choose, setChoose] = useState(false);
   const [email, setEmail] = useState(''),
@@ -483,7 +504,7 @@ export default function App() {
     setDetail(null);
   };
   const copyPrompt = async () => {
-    const text = `내 하루결 건강 기록을 get_health_context와 get_health_summary로 조회해 ${range.from}부터 ${range.to}까지 분석해 줘. calculate_energy_balance로 필요한 날짜의 수치를 다시 계산하고, 누락과 추정 한계를 알려줘. 원본 ID와 현재 데이터 버전에 근거한 분석을 save_analysis_report로 저장해 줘. 목표나 처방은 자동 변경하지 마.`;
+    const text = `내 하루결 건강 기록을 get_health_context와 get_health_summary로 조회해 ${range.from}부터 ${range.to}까지 분석해 줘. 식사·체중·수면·증상·처방 변경과 실제 투여를 함께 살펴보고 의심되는 패턴과 가능한 설명을 가감없이 말해 줘. 관찰 사실, 가설, 실제 근거 ID와 불확실성을 구분하고 조회 버전으로 save_analysis_report에 저장해 줘. calculate_energy_balance로 필요한 수치를 확인하고 목표나 처방은 자동 변경하지 마.`;
     try {
       await navigator.clipboard.writeText(text);
       notify('dot에게 보낼 문구를 복사했어요.');
@@ -499,7 +520,25 @@ export default function App() {
   const exportCsv = (kind: Kind) => {
     const rows = active.filter((e) => e.kind === kind);
     const data = [
-      ['날짜', '종류', '제목', 'kg', '분', 'kcal', '메모', 'ID'],
+      [
+        '날짜',
+        '종류',
+        '제목',
+        'kg',
+        '분',
+        'kcal',
+        '메모',
+        'ID',
+        '실제 시각',
+        '처방 용량',
+        '처방 일정',
+        '당시 처방 ID',
+        '실제 투여량',
+        '상태',
+        '수면 시간',
+        '증상 강도',
+        '전체 입력 JSON',
+      ],
       ...rows.map((e) => [
         e.date,
         labels[e.kind],
@@ -509,6 +548,15 @@ export default function App() {
         e.kind === 'meal' ? mealEnergy(e.items).value : '',
         e.note,
         e.id,
+        e.occurredAt ?? '',
+        e.kind === 'medication' ? e.dose : '',
+        e.kind === 'medication' ? e.schedule : '',
+        e.kind === 'dose' ? e.medicationId : '',
+        e.kind === 'dose' ? e.actualDose : '',
+        'status' in e ? e.status : '',
+        e.kind === 'sleep' ? e.hours : '',
+        e.kind === 'symptom' ? e.severity : '',
+        JSON.stringify(inputOf(e)),
       ]),
     ];
     download(
@@ -538,7 +586,7 @@ export default function App() {
               나의 결을 알아가요.
             </h1>
             <p>
-              몸무게부터 한 끼의 식사까지.
+              식사와 수면, 약물과 몸의 변화까지.
               <br />
               하루의 작은 기록을 dot와 함께 살펴보세요.
             </p>
@@ -755,11 +803,11 @@ export default function App() {
             <>
               <div className="page-heading">
                 <div>
-                  <span className="eyebrow">MY DAILY BALANCE</span>
+                  <span className="eyebrow">MY HEALTH, CONNECTED</span>
                   <h1>
-                    오늘도, 나의 속도로<span className="heading-dot">.</span>
+                    나의 건강을 한눈에<span className="heading-dot">.</span>
                   </h1>
-                  <p>완벽한 하루보다, 꾸준히 알아가는 나.</p>
+                  <p>식사부터 수면, 약물과 몸의 변화까지 함께 살펴봐요.</p>
                 </div>
                 <button
                   className="button primary"
@@ -802,6 +850,12 @@ export default function App() {
                   </button>
                 )}
               </div>
+              <HealthOverview
+                snapshot={snapshot}
+                date={date}
+                add={add}
+                openMedications={() => navigate('medications')}
+              />
               <div className="overview-grid">
                 <section className="weight-hero">
                   <div className="hero-top">
@@ -901,6 +955,14 @@ export default function App() {
               <div className="quick-actions">
                 {(
                   [
+                    {
+                      kind: 'dose',
+                      icon: Pill,
+                      title: '복용·투여',
+                      text: '실제로 복용한 시각과 양',
+                    },
+                    { kind: 'symptom', icon: Activity, title: '증상', text: '몸의 신호와 강도' },
+                    { kind: 'sleep', icon: Moon, title: '수면', text: '어젯밤의 휴식 남기기' },
                     { kind: 'weight', icon: Scale, title: '몸무게', text: '오늘의 숫자 남기기' },
                     { kind: 'meal', icon: Utensils, title: '식사', text: '한 끼를 가볍게 기록' },
                     { kind: 'workout', icon: Dumbbell, title: '운동', text: '움직인 만큼 쌓이게' },
@@ -918,6 +980,12 @@ export default function App() {
                   </button>
                 ))}
               </div>
+              <IntegratedSummary snapshot={snapshot} date={date} detail={setDetail} />
+              <Timeline
+                snapshot={snapshot}
+                date={date}
+                render={(e) => <EntryRow entry={e} onClick={() => setDetail(e.id)} />}
+              />
               <div className="daily-grid">
                 <section className="card daily-records">
                   <div className="section-line">
@@ -1398,6 +1466,15 @@ export default function App() {
             </>
           )}
 
+          {route === 'medications' && loaded && (
+            <MedicationPanel
+              snapshot={snapshot}
+              date={date}
+              add={add}
+              detail={setDetail}
+              revise={(input) => setEditor({ kind: input.kind, initial: input })}
+            />
+          )}
           {route === 'analysis' && (
             <>
               <div className="page-heading">
@@ -1418,7 +1495,7 @@ export default function App() {
                 <div>
                   <h2>기억은 기록에, 이해는 대화에.</h2>
                   <p>
-                    dot는 필요한 기록을 읽고 계산한 뒤, 근거가 있는 노트를 남겨요.
+                    홈페이지의 자동 요약은 규칙 기반입니다. AI 해석은 연결된 dot에 요청해요.
                     <br />
                     복사한 문구를 연결된 dot에게 보내주세요.
                   </p>
@@ -1456,6 +1533,12 @@ export default function App() {
                           </p>
                         )}
                         <p className="report-text">{e.observations}</p>
+                        {e.hypotheses && (
+                          <div className="report-suggestion">
+                            <strong>가설 · 가능한 설명</strong>
+                            <p>{e.hypotheses}</p>
+                          </div>
+                        )}
                         <div className="report-suggestion">
                           <strong>다음으로 해볼 일</strong>
                           <p>{e.suggestions || '아직 제안이 없어요.'}</p>
@@ -1670,13 +1753,26 @@ export default function App() {
                   <h2>
                     <Download size={19} /> 내 기록 보관하기
                   </h2>
-                  <p>JSON에는 원본·출처·수정 이력이 함께 담겨요.</p>
+                  <p>
+                    JSON에는 원본·출처·수정 이력이 함께 담겨요. 기간별 전체 기록 CSV는 건강 홈에서
+                    내려받을 수 있어요.
+                  </p>
                   <div className="button-row">
                     <button className="button secondary" disabled={working} onClick={exportJson}>
                       <Download size={16} />
                       JSON 백업
                     </button>
-                    {(['weight', 'meal', 'workout'] as const).map((k) => (
+                    {(
+                      [
+                        'weight',
+                        'meal',
+                        'workout',
+                        'medication',
+                        'dose',
+                        'symptom',
+                        'sleep',
+                      ] as const
+                    ).map((k) => (
                       <button
                         key={k}
                         className="button secondary small"
@@ -1854,13 +1950,15 @@ export default function App() {
           kind={editor.kind}
           date={date}
           entry={editor.entry}
+          entries={snapshot.entries}
           initial={
-            !editor.entry && ['body', 'baseline'].includes(editor.kind)
+            editor.initial ??
+            (!editor.entry && ['body', 'baseline'].includes(editor.kind)
               ? (() => {
                   const e = latest(active, editor.kind, date);
                   return e ? inputOf(e) : undefined;
                 })()
-              : undefined
+              : undefined)
           }
           version={snapshot.version}
           onClose={() => setEditor(null)}
@@ -1910,6 +2008,12 @@ export default function App() {
               <>
                 <h4>관찰</h4>
                 <p className="pre-wrap">{selected.observations}</p>
+                {selected.hypotheses && (
+                  <>
+                    <h4>가설 · 가능한 설명</h4>
+                    <p className="pre-wrap">{selected.hypotheses}</p>
+                  </>
+                )}
                 <h4>한계</h4>
                 <p className="pre-wrap">{selected.limitations}</p>
                 <h4>제안</h4>
@@ -1953,6 +2057,18 @@ export default function App() {
                           metSource: 'MET 출처',
                           includedInBaseline: '기준선 포함',
                           status: '상태',
+                          dose: '확인한 처방 용량',
+                          doseConfirmed: '용량 확인',
+                          route: '투여 경로',
+                          schedule: '처방 일정',
+                          medicationId: '당시 처방',
+                          actualDose: '실제 복용·투여량',
+                          previousId: '이전 처방',
+                          changeReason: '변경·중단 사유',
+                          hours: '총수면 시간',
+                          quality: '수면 만족도 (1~5)',
+                          severity: '증상 강도 (0~10)',
+                          durationMinutes: '지속 시간 (분)',
                           heightCm: '키 (cm)',
                           birthDate: '생년월일',
                           age: '만 나이',
@@ -1980,28 +2096,44 @@ export default function App() {
                         }[k] ?? k}
                       </dt>
                       <dd>
-                        {typeof v === 'boolean'
-                          ? v
-                            ? '예'
-                            : '아니요'
-                          : typeof v === 'object'
-                            ? JSON.stringify(v)
-                            : ({
-                                male: '남성식',
-                                female: '여성식',
-                                unknown: '미확인',
-                                adult: '일반 성인용',
-                                not_applicable: '적용 안 함',
-                                excludes_exercise: '별도 운동 제외',
-                                includes_exercise: '운동 포함',
-                                done: '완료',
-                                planned: '계획',
-                                active: '진행 중',
-                                paused: '잠시 쉬기',
-                                proposed: '제안',
-                                accepted: '실천 중',
-                                deferred: '나중에',
-                              }[String(v)] ?? String(v))}
+                        {(k === 'medicationId' || k === 'previousId') && typeof v === 'string' ? (
+                          <button className="text-button" onClick={() => setDetail(v)}>
+                            {snapshot.entries.find((e) => e.id === v)
+                              ? titleOf(snapshot.entries.find((e) => e.id === v)!)
+                              : '참조 기록 보기'}
+                          </button>
+                        ) : typeof v === 'boolean' ? (
+                          v ? (
+                            '예'
+                          ) : (
+                            '아니요'
+                          )
+                        ) : typeof v === 'object' ? (
+                          JSON.stringify(v)
+                        ) : (
+                          ({
+                            male: '남성식',
+                            female: '여성식',
+                            unknown: '미확인',
+                            adult: '일반 성인용',
+                            not_applicable: '적용 안 함',
+                            excludes_exercise: '별도 운동 제외',
+                            includes_exercise: '운동 포함',
+                            done: '완료',
+                            planned: '계획',
+                            active: '진행 중',
+                            paused: '잠시 쉬기',
+                            proposed: '제안',
+                            accepted: '실천 중',
+                            deferred: '나중에',
+                            oral: '경구',
+                            injection: '주사',
+                            other: '기타',
+                            taken: '복용·투여',
+                            skipped: '미복용·미투여',
+                            stopped: '중단',
+                          }[String(v)] ?? String(v))
+                        )}
                       </dd>
                     </div>
                   ))}
@@ -2078,7 +2210,7 @@ export default function App() {
               <>
                 <button
                   className="button secondary danger-text"
-                  disabled={working}
+                  disabled={working || selected.kind === 'medication'}
                   onClick={() => toggleArchive(selected)}
                 >
                   <Trash2 size={16} />
@@ -2086,9 +2218,21 @@ export default function App() {
                 </button>
                 <button
                   className="button primary"
-                  onClick={() => setEditor({ kind: selected.kind, entry: selected })}
+                  onClick={() =>
+                    selected.kind === 'medication'
+                      ? setEditor({
+                          kind: 'medication',
+                          initial: {
+                            ...inputOf(selected),
+                            date,
+                            previousId: selected.id,
+                            changeReason: '',
+                          } as EntryInput,
+                        })
+                      : setEditor({ kind: selected.kind, entry: selected })
+                  }
                 >
-                  기록 수정
+                  {selected.kind === 'medication' ? '변경·중단 기록 추가' : '기록 수정'}
                 </button>
               </>
             )}

@@ -2,6 +2,7 @@ import express, { type Request, type Response, type NextFunction } from 'express
 import { z } from 'zod';
 import { dateSchema } from '../../shared/schema.js';
 import { calculateDay, summarize } from '../../shared/energy.js';
+import { compareHealth } from '../../shared/integrated.js';
 import { today, addDays } from '../../shared/dates.js';
 import { AppError, HealthService } from './health.js';
 import { OAuthService, type OAuthConfig } from './oauth.js';
@@ -95,7 +96,7 @@ export function createApp(store: Store, config: AppConfig, verify: VerifyToken) 
       .catch(next);
   };
   app.get('/health', (_req, res) =>
-    res.json({ ok: true, service: 'harugyeol-health', version: '1.0.0' }),
+    res.json({ ok: true, service: 'harugyeol-health', version: '1.1.0' }),
   );
   const metadata = (_req: Request, res: Response) => res.json(oauth.metadata());
   app.get('/.well-known/oauth-authorization-server', metadata);
@@ -230,7 +231,12 @@ export function createApp(store: Store, config: AppConfig, verify: VerifyToken) 
       const q = z
         .object({ from: dateSchema.default(addDays(today(), -6)), to: dateSchema.default(today()) })
         .parse(req.query);
-      res.json(summarize(await health.snapshot(req.uid!), q.from, q.to));
+      const s = await health.snapshot(req.uid!);
+      res.json({
+        ...summarize(s, q.from, q.to),
+        integrated: compareHealth(s, q.from, q.to),
+        summaryMethod: 'rules-v1',
+      });
     }),
   );
   app.get(

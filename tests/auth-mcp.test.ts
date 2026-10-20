@@ -54,6 +54,78 @@ async function authorize(o: OAuthService, scopes = 'health:read health:write') {
   };
 }
 describe('OAuth 보안 경계', () => {
+  it('기존 OAuth와 웹 API에서 새 기록·가설·통합 요약을 호환되게 제공한다', async () => {
+    const { app, oauth } = fixture(),
+      a = await authorize(oauth),
+      t = await oauth.token(a.body);
+    const call = async (name: string, args: unknown) => {
+      const r = await request(app)
+        .post('/mcp')
+        .auth(t.access_token, { type: 'bearer' })
+        .set('Accept', 'application/json, text/event-stream')
+        .send({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } });
+      return { error: r.body.result.isError, data: JSON.parse(r.body.result.content[0].text) };
+    };
+    const plan = {
+      kind: 'medication',
+      date: '2026-10-07',
+      name: 'SYNTHETIC HTTP fixture',
+      dose: 'SYNTHETIC 1 unit',
+      doseConfirmed: true,
+      route: 'oral',
+      schedule: 'SYNTHETIC schedule',
+      status: 'active',
+    };
+    expect(
+      (await call('create_health_entry', { requestId: 'automatic-prescription', entry: plan })).data
+        .code,
+    ).toBe('user_decision');
+    const p = await request(app)
+      .post('/v1/entries')
+      .auth('fixture-owner-session', { type: 'bearer' })
+      .send({ requestId: 'web-prescription', entry: plan })
+      .expect(201);
+    const d = await call('create_health_entry', {
+      requestId: 'mcp-actual-dose',
+      entry: {
+        kind: 'dose',
+        date: '2026-10-07',
+        medicationId: p.body.entry.id,
+        status: 'taken',
+        actualDose: 'SYNTHETIC 1 unit',
+        occurredAt: '2026-10-07T09:00:00+09:00',
+      },
+    });
+    expect(d.error).not.toBe(true);
+    const summary = await request(app)
+      .get('/v1/summary?from=2026-10-07&to=2026-10-07')
+      .auth('fixture-owner-session', { type: 'bearer' })
+      .expect(200);
+    expect(summary.body).toMatchObject({
+      summaryMethod: 'rules-v1',
+      integrated: { current: { taken: 1 } },
+    });
+    const m = await call('get_health_summary', { from: '2026-10-07', to: '2026-10-07' });
+    expect(m.data.integrated.current.taken).toBe(1);
+    const report = await call('save_analysis_report', {
+      requestId: 'hypothesis-report',
+      entry: {
+        kind: 'analysis',
+        date: '2026-10-07',
+        title: 'SYNTHETIC hypothesis',
+        from: '2026-10-07',
+        to: '2026-10-07',
+        observations: 'SYNTHETIC observation',
+        hypotheses: 'SYNTHETIC possible explanation',
+        limitations: 'SYNTHETIC uncertainty',
+        suggestions: 'SYNTHETIC next observation',
+        basedOnVersion: 2,
+        evidenceIds: [d.data.entry.id],
+      },
+    });
+    expect(report.data.entry.hypotheses).toBe('SYNTHETIC possible explanation');
+    expect(report.error).not.toBe(true);
+  });
   it('등록 콜백·PKCE·대상·scope를 검증한다', async () => {
     const { oauth } = fixture();
     for (const patch of [

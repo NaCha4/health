@@ -96,6 +96,12 @@ export class HealthService {
     if (operation !== 'create' && (!id || !Number.isInteger(expectedVersion)))
       throw new AppError(400, 'version_required', '수정할 기록 ID와 버전이 필요합니다.');
     this.validateInput(parsed, actor);
+    if (parsed?.kind === 'medication' && actor === 'dot')
+      throw new AppError(
+        403,
+        'user_decision',
+        '약물·주사 처방 일정과 변경·중단은 홈페이지에서 직접 확인하세요.',
+      );
     const fingerprint = hash(
       stable({
         operation,
@@ -141,6 +147,12 @@ export class HealthService {
         throw new AppError(409, 'deleted', '삭제한 기록은 먼저 복원하세요.');
       if (operation === 'update' && parsed?.kind !== before?.kind)
         throw new AppError(400, 'kind_change', '기록 종류는 변경할 수 없습니다.');
+      if (before?.kind === 'medication' && operation !== 'restore')
+        throw new AppError(
+          409,
+          'medication_history',
+          '처방 이력을 보존하려면 새 변경·중단 기록을 추가하세요.',
+        );
       if (
         actor === 'dot' &&
         (parsed?.kind === 'goal' ||
@@ -164,6 +176,10 @@ export class HealthService {
         deletedAt: operation === 'delete' ? at : null,
         actor,
       } as Entry;
+      if (next.kind === 'dose' || next.kind === 'medication') {
+        const records = await tx.list<Entry>(root + '/entries');
+        this.validateMedication(next, records, operation === 'restore');
+      }
       if (next.kind === 'analysis') {
         if (next.basedOnVersion > (meta?.version ?? 0))
           throw new AppError(400, 'future_version', '분석 근거 버전이 현재 기록보다 앞섭니다.');
@@ -247,6 +263,23 @@ export class HealthService {
     }
     if (input.kind === 'analysis' && input.from > input.to)
       throw new AppError(400, 'range', '분석 시작일과 종료일을 확인하세요.');
+    if (input.kind === 'dose') {
+      if (isFutureOccurrence(input, this.now()))
+        throw new AppError(
+          400,
+          'future_dose',
+          '실제 복용·미복용 기록은 미래 시각에 저장할 수 없습니다.',
+        );
+      if (
+        (input.status === 'taken' && !input.actualDose) ||
+        (input.status === 'skipped' && input.actualDose !== null)
+      )
+        throw new AppError(
+          400,
+          'actual_dose',
+          '복용한 경우 실제 용량을, 미복용인 경우 빈 용량을 기록하세요.',
+        );
+    }
     if (input.kind === 'workout' && input.met != null && !input.metSource)
       throw new AppError(400, 'met_source', '운동 강도 출처나 추정 근거가 필요합니다.');
     if (
@@ -255,6 +288,50 @@ export class HealthService {
       isFutureOccurrence(input, this.now())
     )
       throw new AppError(400, 'future_workout', '미래 날짜나 시각의 운동은 계획으로 저장하세요.');
+  }
+  private validateMedication(entry: Entry, entries: Entry[], restoring = false) {
+    if (entry.kind === 'dose') {
+      const plan = entries.find((e) => e.id === entry.medicationId);
+      if (plan?.kind !== 'medication' || (!restoring && plan.deletedAt) || plan.date > entry.date)
+        throw new AppError(
+          400,
+          'medication_reference',
+          '같은 계정의 적용일이 맞는 처방 기록을 선택하세요.',
+        );
+    }
+    if (entry.kind === 'medication' && entry.previousId) {
+      const previous = entries.find((e) => e.id === entry.previousId);
+      if (
+        previous?.kind !== 'medication' ||
+        previous.id === entry.id ||
+        previous.date > entry.date ||
+        (!restoring && previous.deletedAt)
+      )
+        throw new AppError(400, 'medication_reference', '이전 처방과 변경 적용일을 확인하세요.');
+      if (
+        entries.some(
+          (e) =>
+            e.kind === 'medication' &&
+            !e.deletedAt &&
+            e.previousId === entry.previousId &&
+            e.id !== entry.id,
+        )
+      )
+        throw new AppError(
+          409,
+          'medication_conflict',
+          '이미 변경된 처방입니다. 최신 일정을 다시 확인하세요.',
+        );
+      const seen = new Set([entry.id]);
+      let parent: Entry | undefined = previous;
+      while (parent?.kind === 'medication') {
+        if (seen.has(parent.id))
+          throw new AppError(400, 'medication_cycle', '처방 이력이 순환합니다.');
+        seen.add(parent.id);
+        const parentId: string | undefined = parent.previousId;
+        parent = entries.find((e) => e.id === parentId);
+      }
+    }
   }
   async history(uid: string, id?: string) {
     if (id) idSchema.parse(id);
@@ -343,6 +420,7 @@ export class HealthService {
     const entriesById = new Map(entries.map((e) => [e.id, e]));
     for (const e of entries) {
       this.validateInput(e, 'web');
+      this.validateMedication(e, entries, true);
       if (
         e.kind === 'analysis' &&
         (e.basedOnVersion > data.version || e.evidenceIds.some((id) => !ids.has(id)))
@@ -415,6 +493,19 @@ export class HealthService {
         fingerprint: string;
         result?: { entry: Entry };
       }>(root + '/requests');
+      if (
+        entry.kind === 'medication' &&
+        entries.some(
+          (e) =>
+            (e.kind === 'dose' && e.medicationId === id) ||
+            (e.kind === 'medication' && e.previousId === id),
+        )
+      )
+        throw new AppError(
+          409,
+          'medication_referenced',
+          '실제 투여나 변경 이력에서 참조하는 처방은 영구 삭제할 수 없습니다.',
+        );
       const removed = new Set([id]);
       let count = 0;
       while (count !== removed.size) {

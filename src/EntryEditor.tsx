@@ -9,7 +9,7 @@ import {
   type FoodItem,
   type Source,
 } from '../shared/schema';
-import { today } from '../shared/dates';
+import { today, isFutureOccurrence } from '../shared/dates';
 import { mealEnergy } from '../shared/energy';
 import { inputOf, save, type Api } from './api';
 import { EntrySaver } from './entry-save';
@@ -151,9 +151,28 @@ function SourceFields({ value, onChange }: { value: Source; onChange: (v: Source
   );
 }
 const source = (): Source => ({ kind: 'user', title: '직접 입력' });
+const titleForPlan = (e: Entry) =>
+  e.kind === 'medication' ? `${e.name} · ${e.dose} · ${e.date}부터` : '';
 function defaults(kind: Kind, date: string): Record<string, any> {
   const base = { kind, date, note: '' };
   switch (kind) {
+    case 'medication':
+      return {
+        ...base,
+        name: '',
+        dose: '',
+        doseConfirmed: false,
+        route: '',
+        schedule: '',
+        status: 'active',
+        changeReason: '',
+      };
+    case 'dose':
+      return { ...base, medicationId: '', occurredAt: '', status: 'taken', actualDose: null };
+    case 'symptom':
+      return { ...base, name: '', severity: null, durationMinutes: null };
+    case 'sleep':
+      return { ...base, hours: null, quality: null };
     case 'weight':
       return { ...base, kg: null, representative: true, fasting: false };
     case 'meal':
@@ -221,6 +240,7 @@ export default function EntryEditor({
   date,
   entry,
   initial,
+  entries = [],
   version,
   onClose,
   onSaved,
@@ -230,6 +250,7 @@ export default function EntryEditor({
   date: string;
   entry?: Entry;
   initial?: EntryInput;
+  entries?: Entry[];
   version: number;
   onClose: () => void;
   onSaved: () => Promise<void>;
@@ -242,6 +263,9 @@ export default function EntryEditor({
           ...initial,
           date,
           ...(kind === 'analysis' ? { basedOnVersion: version } : {}),
+          ...(kind === 'medication' && initial && 'previousId' in initial
+            ? { doseConfirmed: false }
+            : {}),
         },
   );
   const [error, setError] = useState(''),
@@ -350,6 +374,10 @@ export default function EntryEditor({
     setError('');
     try {
       const input = inputSchema.parse(draft);
+      if (input.kind === 'dose' && isFutureOccurrence(input))
+        throw new Error('실제 복용·미복용 기록은 미래 시각에 저장할 수 없습니다.');
+      if (input.kind === 'dose' && input.status === 'taken' && !input.actualDose)
+        throw new Error('실제 복용·투여량을 입력하세요.');
       await saver.current!.save(input);
       await onSaved();
       onClose();
@@ -379,7 +407,9 @@ export default function EntryEditor({
           disabled={busy}
           style={{ border: 0, margin: 0, minWidth: 0 }}
         >
-          <Field label={['body', 'baseline'].includes(kind) ? '적용 시작일' : '기록 날짜'}>
+          <Field
+            label={['body', 'baseline', 'medication'].includes(kind) ? '적용 시작일' : '기록 날짜'}
+          >
             <input
               type="date"
               value={draft.date}
@@ -401,12 +431,19 @@ export default function EntryEditor({
               }
             />
           </Field>
-          {['weight', 'meal', 'workout'].includes(kind) && (
-            <Field label="실제 시각 (선택, 한국 시간)">
+          {['weight', 'meal', 'workout', 'dose', 'symptom', 'sleep'].includes(kind) && (
+            <Field
+              label={
+                kind === 'dose'
+                  ? '실제 복용·미복용 시각 (한국 시간)'
+                  : '실제 시각 (선택, 한국 시간)'
+              }
+            >
               <input
                 type="time"
+                required={kind === 'dose'}
                 value={
-                  draft.occurredAt
+                  draft.occurredAt && !Number.isNaN(Date.parse(draft.occurredAt))
                     ? new Date(draft.occurredAt).toLocaleTimeString('en-GB', {
                         timeZone: 'Asia/Seoul',
                         hour: '2-digit',
@@ -423,6 +460,109 @@ export default function EntryEditor({
                 }
               />
             </Field>
+          )}
+          {kind === 'medication' && (
+            <>
+              {draft.previousId && (
+                <p className="help">
+                  이전 처방은 그대로 보존됩니다. 새 적용일부터의 전체 일정과 상태를 확인하세요.
+                </p>
+              )}
+              <Field label="약물·주사 이름">{text('name', '', true)}</Field>
+              <Field
+                label="확인한 처방 용량"
+                hint="단위까지 직접 적어 주세요. 예시 값은 자동으로 채우지 않아요."
+              >
+                {text('dose', '', true)}
+              </Field>
+              {check('doseConfirmed', '처방전·약 봉투 등에서 이 용량을 직접 확인했어요')}
+              <Field label="투여 경로">
+                {select('route', {
+                  '': '선택해 주세요',
+                  oral: '경구',
+                  injection: '주사',
+                  other: '기타',
+                })}
+              </Field>
+              <Field
+                label="처방 일정"
+                hint="횟수·시간·요일·간격 또는 필요 시 복용 조건을 처방받은 내용대로 적어 주세요."
+              >
+                <textarea
+                  required
+                  value={draft.schedule ?? ''}
+                  onChange={(e) => patch({ schedule: e.target.value })}
+                />
+              </Field>
+              <Field label="적용일부터의 상태">
+                {select('status', { active: '복용 중', paused: '일시 중단', stopped: '중단' })}
+              </Field>
+              <Field label="변경·중단 사유 (선택)">{area('changeReason')}</Field>
+            </>
+          )}
+          {kind === 'dose' && (
+            <>
+              <Field label="당시 처방 일정">
+                <select
+                  required
+                  value={draft.medicationId ?? ''}
+                  onChange={(e) => patch({ medicationId: e.target.value })}
+                >
+                  <option value="">처방을 선택해 주세요</option>
+                  {entries
+                    .filter((e) => e.kind === 'medication' && !e.deletedAt && e.date <= draft.date)
+                    .map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {titleForPlan(e)}
+                      </option>
+                    ))}
+                </select>
+              </Field>
+              {!entries.some((e) => e.kind === 'medication' && !e.deletedAt) && (
+                <p className="help">약물·주사 화면에서 확인한 처방 일정을 먼저 등록해 주세요.</p>
+              )}
+              <Field label="실제 복용 여부">
+                <select
+                  value={draft.status}
+                  onChange={(e) =>
+                    patch({
+                      status: e.target.value,
+                      ...(e.target.value === 'skipped' ? { actualDose: null } : {}),
+                    })
+                  }
+                >
+                  <option value="taken">복용·투여했어요</option>
+                  <option value="skipped">복용·투여하지 않았어요</option>
+                </select>
+              </Field>
+              {draft.status === 'taken' && (
+                <Field
+                  label="실제 복용·투여량"
+                  hint="처방 용량과 다르면 실제 사용한 양을 기록하세요."
+                >
+                  {text('actualDose', '', true)}
+                </Field>
+              )}
+            </>
+          )}
+          {kind === 'symptom' && (
+            <>
+              <Field label="느낀 증상">{text('name', '', true)}</Field>
+              <Field label="증상 강도 (0~10)" hint="0은 증상이 없었음을 직접 남긴 기록입니다.">
+                {number('severity', 0, 10, true)}
+              </Field>
+              <Field label="지속 시간 (분, 선택)">{number('durationMinutes', 0, 525600)}</Field>
+            </>
+          )}
+          {kind === 'sleep' && (
+            <>
+              <p className="help">
+                잠에서 깬 날짜에 하루 총수면 시간을 기록하세요. 같은 날짜의 여러 기록은 합산하지
+                않아요.
+              </p>
+              <Field label="총수면 시간">{number('hours', 0, 24, true)}</Field>
+              <Field label="수면 만족도 (1~5, 선택)">{number('quality', 1, 5)}</Field>
+            </>
           )}
           {kind === 'weight' && (
             <>
@@ -789,6 +929,7 @@ export default function EntryEditor({
                 </Field>
               </div>
               <Field label="관찰">{area('observations')}</Field>
+              <Field label="가설 · 가능한 설명">{area('hypotheses')}</Field>
               <Field label="한계와 불확실성">{area('limitations')}</Field>
               <Field label="제안">{area('suggestions')}</Field>
               <Field label="근거 기록 ID (쉼표 구분)">

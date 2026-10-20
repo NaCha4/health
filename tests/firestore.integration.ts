@@ -33,6 +33,54 @@ afterAll(async () => {
   await deleteApp(admin);
 });
 describe('실제 로컬 Firestore 규칙과 트랜잭션', () => {
+  it('처방 변경 경쟁·실제 투여 재시도·백업을 격리된 Firestore에서 보존한다', async () => {
+    const store = new FirestoreStore(getFirestore(admin)),
+      h = new HealthService(store),
+      uid = 'integrated-emulator';
+    const plan = {
+      kind: 'medication',
+      date: '2026-10-07',
+      name: 'SYNTHETIC fixture',
+      dose: 'SYNTHETIC 1 unit',
+      doseConfirmed: true,
+      route: 'injection',
+      schedule: 'SYNTHETIC schedule',
+      status: 'active',
+    };
+    const p = await h.mutate(uid, 'web', 'create', 'emulator-integrated-plan', plan);
+    const changes = await Promise.allSettled([
+      h.mutate(uid, 'web', 'create', 'emulator-change-a', {
+        ...plan,
+        previousId: p.entry.id,
+        status: 'paused',
+      }),
+      h.mutate(uid, 'web', 'create', 'emulator-change-b', {
+        ...plan,
+        previousId: p.entry.id,
+        status: 'stopped',
+      }),
+    ]);
+    expect(changes.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(changes.filter((r) => r.status === 'rejected')).toHaveLength(1);
+    const input = {
+      kind: 'dose',
+      date: '2026-10-07',
+      medicationId: p.entry.id,
+      status: 'taken',
+      actualDose: 'SYNTHETIC 1 unit',
+      occurredAt: '2026-10-07T09:00:00+09:00',
+    };
+    const [a, b] = await Promise.all([
+      h.mutate(uid, 'web', 'create', 'emulator-integrated-dose', input),
+      h.mutate(uid, 'web', 'create', 'emulator-integrated-dose', input),
+    ]);
+    expect(a).toEqual(b);
+    const reloaded = new HealthService(new FirestoreStore(getFirestore(admin)));
+    expect((await reloaded.snapshot(uid)).entries).toHaveLength(3);
+    const backup = await reloaded.export(uid);
+    await h.restoreBackup('integrated-restored-emulator', backup);
+    expect(await h.snapshot('integrated-restored-emulator')).toEqual(await h.snapshot(uid));
+  });
   it('실제 트랜잭션에서도 제안 참조와 사용자 결정을 보호하고 백업을 복원한다', async () => {
     const h = new HealthService(new FirestoreStore(getFirestore(admin))),
       uid = 'regression-emulator';

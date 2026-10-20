@@ -63,6 +63,50 @@ export const inputSchema = z.discriminatedUnion('kind', [
   z
     .object({
       ...base,
+      kind: z.literal('medication'),
+      name: z.string().trim().min(1).max(200),
+      dose: z.string().trim().min(1).max(200),
+      doseConfirmed: z.literal(true),
+      route: z.enum(['oral', 'injection', 'other']),
+      schedule: z.string().trim().min(1).max(1000),
+      status: z.enum(['active', 'paused', 'stopped']),
+      previousId: z
+        .string()
+        .regex(/^[A-Za-z0-9_-]{1,128}$/)
+        .optional(),
+      changeReason: text.default(''),
+    })
+    .strict(),
+  z
+    .object({
+      ...base,
+      kind: z.literal('dose'),
+      medicationId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+      occurredAt: z.string().datetime({ offset: true }),
+      status: z.enum(['taken', 'skipped']),
+      actualDose: z.string().trim().min(1).max(200).nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      ...base,
+      kind: z.literal('symptom'),
+      name: z.string().trim().min(1).max(200),
+      severity: z.number().int().min(0).max(10),
+      durationMinutes: number.max(525600).nullable().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      ...base,
+      kind: z.literal('sleep'),
+      hours: z.number().min(0).max(24),
+      quality: z.number().int().min(1).max(5).nullable().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      ...base,
       kind: z.literal('weight'),
       kg: z.number().min(10).max(600),
       representative: z.boolean().default(false),
@@ -156,6 +200,7 @@ export const inputSchema = z.discriminatedUnion('kind', [
       from: dateSchema,
       to: dateSchema,
       observations: text,
+      hypotheses: text.optional(),
       limitations: text,
       suggestions: text,
       basedOnVersion: z.number().int().nonnegative(),
@@ -201,6 +246,10 @@ export interface Change {
   version: number;
 }
 export const kinds: Kind[] = [
+  'dose',
+  'symptom',
+  'sleep',
+  'medication',
   'weight',
   'meal',
   'workout',
@@ -213,6 +262,10 @@ export const kinds: Kind[] = [
   'action',
 ];
 export const labels: Record<Kind, string> = {
+  medication: '약물·주사 일정',
+  dose: '실제 복용·투여',
+  symptom: '증상',
+  sleep: '수면',
   weight: '체중',
   meal: '식사',
   workout: '운동',
@@ -225,6 +278,9 @@ export const labels: Record<Kind, string> = {
   action: '실천 항목',
 };
 export function titleOf(e: EntryInput): string {
+  if (e.kind === 'dose')
+    return e.status === 'taken' ? `복용·투여 ${e.actualDose ?? ''}` : '미복용·미투여 기록';
+  if (e.kind === 'sleep') return `수면 ${e.hours}시간`;
   if (e.kind === 'weight') return `${e.kg} kg`;
   if ('name' in e) return e.name;
   if ('title' in e) return e.title;
